@@ -27,7 +27,7 @@ distilgpt2
     └── [03] Evaluation ───────── compare base / SFT / DPO outputs
 ```
 
-Human preference data (214 triples) was collected via [swiperight-alpha.vercel.app](https://swiperight-alpha.vercel.app) and exported as `preferences.json`.
+Human preference data (243 triples) was collected via [swiperight-alpha.vercel.app](https://swiperight-alpha.vercel.app) and exported as `preferences.json`.
 
 ---
 
@@ -67,7 +67,7 @@ aipi590-challenge-2/
 │   ├── dataset.py          # SFT and DPO dataset loaders
 │   └── eval.py             # bio generation and quality metrics
 ├── data/
-│   └── preferences.json    # 240 human preference triples
+│   └── preferences.json    # 243 human preference triples
 ├── results/                # metrics + charts (auto-published by notebooks)
 └── requirements.txt
 ```
