@@ -116,6 +116,16 @@ def publish_artifacts(
         return True
 
     _run(f'git commit -m "{message}"', cwd=repo_dir)
+
+    # Re-embed the token so push works regardless of how the remote was set up
+    token = os.environ.get("GITHUB_TOKEN", "")
+    remote = _run("git remote get-url origin", cwd=repo_dir)
+    # Strip any existing credentials before re-adding
+    import re as _re
+    remote_clean = _re.sub(r"https://[^@]+@", "https://", remote)
+    authed = remote_clean.replace("https://", f"https://{token}@")
+    _run(f"git remote set-url origin {authed}", cwd=repo_dir)
+
     _run("git stash", cwd=repo_dir)
     _run("git pull --rebase origin main", cwd=repo_dir)
     _run("git stash pop || true", cwd=repo_dir)
