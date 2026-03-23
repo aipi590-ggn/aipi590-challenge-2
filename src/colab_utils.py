@@ -93,42 +93,85 @@ def publish_artifacts(
     repo_dir: Path,
     *,
     dry_run: bool = False,
+    repo: str = "jonasneves/aipi590-challenge-2",
+    branch: str = "main",
 ) -> bool:
     """
-    Stage, commit, and push the given files back to origin/main.
+    Upload files to GitHub via the Contents API (no git push required).
 
-    Uses stash + rebase to handle concurrent pushes from multiple notebooks.
-    Returns True on success.
+    Each file is upserted (created or updated) individually. Returns True
+    if all uploads succeed. Falls back gracefully if a file is unchanged.
+
+    Requires GITHUB_TOKEN in environment with repo write access.
     """
-    if not paths:
-        return False
+    import base64
+    import urllib.request
+    import urllib.error
+    import json as _json
 
-    for p in paths:
-        _run(f"git add {p}", cwd=repo_dir)
-
-    status = _run("git status --porcelain", cwd=repo_dir)
-    if not status:
-        print("Nothing to publish — no changes.")
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        print("GITHUB_TOKEN not set — skipping publish.")
         return False
 
     if dry_run:
-        print(f"[dry_run] Would commit: {message}")
+        print(f"[dry_run] Would publish: {[str(p) for p in paths]}")
         return True
 
-    _run(f'git commit -m "{message}"', cwd=repo_dir)
+    if not paths:
+        return False
 
-    # Re-embed the token so push works regardless of how the remote was set up
-    token = os.environ.get("GITHUB_TOKEN", "")
-    remote = _run("git remote get-url origin", cwd=repo_dir)
-    # Strip any existing credentials before re-adding
-    import re as _re
-    remote_clean = _re.sub(r"https://[^@]+@", "https://", remote)
-    authed = remote_clean.replace("https://", f"https://{token}@")
-    _run(f"git remote set-url origin {authed}", cwd=repo_dir)
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+    }
 
-    _run("git stash", cwd=repo_dir)
-    _run("git pull --rebase origin main", cwd=repo_dir)
-    _run("git stash pop || true", cwd=repo_dir)
-    _run("git push origin main", cwd=repo_dir)
-    print(f"Published: {message}")
-    return True
+    # Resolve each path relative to the repo root on disk
+    repo_root = repo_dir
+
+    success = True
+    for p in paths:
+        p = Path(p)
+        if not p.exists():
+            print(f"  skip (not found): {p}")
+            continue
+
+        # Path inside the repo
+        try:
+            rel = p.relative_to(repo_root)
+        except ValueError:
+            rel = Path(p.name)
+
+        api_url = f"https://api.github.com/repos/{repo}/contents/{rel}"
+        content_b64 = base64.b64encode(p.read_bytes()).decode()
+
+        # Fetch existing SHA (needed for updates)
+        sha = None
+        try:
+            req = urllib.request.Request(api_url, headers=headers)
+            with urllib.request.urlopen(req) as resp:
+                sha = _json.loads(resp.read())["sha"]
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                print(f"  warning: GET {rel} returned {e.code}")
+
+        payload = {"message": message, "content": content_b64, "branch": branch}
+        if sha:
+            payload["sha"] = sha
+
+        data = _json.dumps(payload).encode()
+        req = urllib.request.Request(api_url, data=data, headers=headers, method="PUT")
+        try:
+            with urllib.request.urlopen(req) as resp:
+                status = resp.getcode()
+            verb = "updated" if sha else "created"
+            print(f"  {verb}: {rel} ({status})")
+        except urllib.error.HTTPError as e:
+            body = e.read().decode()
+            print(f"  error uploading {rel}: {e.code} {body}")
+            success = False
+
+    if success:
+        print(f"Published: {message}")
+    return success
