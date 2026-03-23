@@ -7,7 +7,7 @@
 
 **AIPI 590 · Challenge 2 — Taming the Language Model**
 
-We apply a full RLHF pipeline to the task of generating Hinge dating app bios. Human preferences are collected via a custom web app, used to train a reward model, and fed back into PPO alignment — turning a generic language model into one that writes bios people actually prefer.
+We apply a full RLHF pipeline to the task of generating Hinge dating app bios. Human preferences are collected via a custom web app, then used to align a language model through Supervised Fine-Tuning followed by Direct Preference Optimization (DPO).
 
 ---
 
@@ -16,24 +16,18 @@ We apply a full RLHF pipeline to the task of generating Hinge dating app bios. H
 ```
 distilgpt2
     │
-    ├── [01] SFT ──────────────── fine-tune on bio corpus
+    ├── [01] SFT ──────────────── fine-tune on chosen bios
     │         │
     │         └── sft_model/
     │
-    ├── [02] Preference Data ──── human A/B judgments via web app
+    ├── [02] DPO ──────────────── align with (prompt, chosen, rejected) triples
     │         │
-    │         └── data/preferences.jsonl
+    │         └── dpo_model/
     │
-    ├── [03] Reward Model ─────── RewardTrainer on preference pairs
-    │         │
-    │         └── reward_model/
-    │
-    └── [04] PPO ──────────────── align SFT model with reward signal
-              │
-              └── ppo_model/
-
-[05] Analysis — compare base / SFT / PPO reward scores and qualitative outputs
+    └── [03] Evaluation ───────── compare base / SFT / DPO outputs
 ```
+
+Human preference data (214 triples) was collected via [swiperight-alpha.vercel.app](https://swiperight-alpha.vercel.app) and exported as `preferences.json`.
 
 ---
 
@@ -42,28 +36,21 @@ distilgpt2
 | # | Notebook | Open in Colab |
 |---|----------|---------------|
 | 01 | Supervised Fine-Tuning | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jonasneves/aipi590-challenge-2/blob/main/notebooks/01_sft.ipynb) |
-| 02 | Preference Data Processing | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jonasneves/aipi590-challenge-2/blob/main/notebooks/02_preference_data.ipynb) |
-| 03 | Reward Model | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jonasneves/aipi590-challenge-2/blob/main/notebooks/03_reward_model.ipynb) |
-| 04 | PPO Alignment | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jonasneves/aipi590-challenge-2/blob/main/notebooks/04_ppo.ipynb) |
-| 05 | Analysis & Results | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jonasneves/aipi590-challenge-2/blob/main/notebooks/05_analysis.ipynb) |
+| 02 | DPO Alignment | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jonasneves/aipi590-challenge-2/blob/main/notebooks/02_dpo.ipynb) |
+| 03 | Evaluation & Results | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jonasneves/aipi590-challenge-2/blob/main/notebooks/03_evaluation.ipynb) |
 
-Results are published back to this repo automatically from each notebook via `src/colab_utils.publish_artifacts`.
+Results (charts and metrics JSON) are published back to this repo automatically from each notebook via `src/colab_utils.publish_artifacts`.
 
 ---
 
-## Preference Collector
+## Data
 
-Human preference data is collected through a custom web app — three design directions, all fully interactive:
+240 preference triples collected by Yifei Guo via [swiperight-alpha.vercel.app](https://swiperight-alpha.vercel.app), included at `data/preferences.json`.
 
-**[jonasneves.github.io/aipi590-challenge-2](https://jonasneves.github.io/aipi590-challenge-2/)**
-
-| | Design | Best for |
-|---|---|---|
-| A | Swipe Cards | Mobile |
-| B | Split Compare | Desktop |
-| C | Minimal Judge | Keyboard-driven |
-
-Export collected preferences as JSONL directly from the app, then upload to Colab for notebook 02.
+Format:
+```json
+{"prompt": "Write a dating bio for: ...", "chosen": "...", "rejected": "..."}
+```
 
 ---
 
@@ -73,15 +60,14 @@ Export collected preferences as JSONL directly from the app, then upload to Cola
 aipi590-challenge-2/
 ├── notebooks/
 │   ├── 01_sft.ipynb
-│   ├── 02_preference_data.ipynb
-│   ├── 03_reward_model.ipynb
-│   ├── 04_ppo.ipynb
-│   └── 05_analysis.ipynb
+│   ├── 02_dpo.ipynb
+│   └── 03_evaluation.ipynb
 ├── src/
 │   ├── colab_utils.py      # publish_artifacts pattern
-│   ├── dataset.py          # bio + preference data loading
-│   └── eval.py             # reward scoring utilities
-├── data/                   # preference JSONL (not committed)
+│   ├── dataset.py          # SFT and DPO dataset loaders
+│   └── eval.py             # bio generation and quality metrics
+├── data/
+│   └── preferences.json    # 240 human preference triples
 ├── results/                # metrics + charts (auto-published by notebooks)
 └── requirements.txt
 ```

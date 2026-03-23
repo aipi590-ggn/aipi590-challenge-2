@@ -1,113 +1,70 @@
 """
-Bio dataset utilities.
+Dataset utilities for the Hinge bio RLHF pipeline.
 
-Handles loading, formatting, and splitting bio preference data for
-each stage of the RLHF pipeline.
+Loads preferences.json (exported from the MyRight annotation app) and
+formats it for each training stage.
+
+Expected preferences.json format (JSON array or one object per line):
+  {"prompt": "Write a dating bio for: ...", "chosen": "...", "rejected": "..."}
 """
 
 from __future__ import annotations
 
 import json
-import random
 from pathlib import Path
-from typing import Optional
 
 from datasets import Dataset, DatasetDict
 
 
-# ── Prompt template ──────────────────────────────────────────────────────────
-
-SYSTEM_PROMPT = (
-    "You are writing a witty, specific, and genuine Hinge dating app bio. "
-    "The bio should reflect the person's personality concretely — avoid generic "
-    "phrases like 'looking for someone genuine' or 'love to travel'."
-)
-
-def format_sft_prompt(person_description: str) -> str:
-    """Format a person description into an SFT training prompt."""
-    return f"<|system|>{SYSTEM_PROMPT}\n<|user|>Write a Hinge bio for: {person_description}\n<|assistant|>"
+def _load_records(path: str | Path) -> list[dict]:
+    text = Path(path).read_text().strip()
+    if text.startswith("["):
+        return json.loads(text)
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
-def format_sft_example(person_description: str, bio: str) -> str:
-    """Full prompt + completion for SFT."""
-    return format_sft_prompt(person_description) + bio + "<|endoftext|>"
+# ── SFT ──────────────────────────────────────────────────────────────────────
 
-
-# ── SFT dataset ──────────────────────────────────────────────────────────────
-
-def load_sft_dataset(path: str | Path, split_ratio: float = 0.9) -> DatasetDict:
+def load_sft_dataset(path: str | Path, val_ratio: float = 0.1) -> DatasetDict:
     """
-    Load a JSONL file of {person, bio} pairs and return train/val splits.
+    Build an SFT dataset from the chosen bios.
 
-    Expected format:
-        {"person": "Software engineer, 26, NYC...", "bio": "I write code..."}
+    Each example is formatted as a prompt+completion so the model learns
+    to generate dating bios before the DPO alignment step.
     """
-    path = Path(path)
-    records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
-    random.shuffle(records)
+    records = _load_records(path)
+    examples = [
+        {"text": f"{r['prompt']}\n\n{r['chosen']}<|endoftext|>"}
+        for r in records
+    ]
 
-    split = int(len(records) * split_ratio)
-    train_records = records[:split]
-    val_records = records[split:]
-
-    def to_dataset(recs):
-        return Dataset.from_dict({
-            "text": [format_sft_example(r["person"], r["bio"]) for r in recs],
-            "person": [r["person"] for r in recs],
-            "bio": [r["bio"] for r in recs],
-        })
-
-    return DatasetDict({"train": to_dataset(train_records), "val": to_dataset(val_records)})
-
-
-# ── Preference dataset ────────────────────────────────────────────────────────
-
-def load_preference_dataset(path: str | Path, split_ratio: float = 0.9) -> DatasetDict:
-    """
-    Load a JSONL file of human preference pairs and return train/val splits.
-
-    Expected format (exported from the preference collector app):
-        {"person": "...", "chosen": "A", "a": "...", "b": "..."}
-    """
-    path = Path(path)
-    records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
-
-    # Drop ties from reward model training
-    records = [r for r in records if r.get("chosen") in ("A", "B")]
-
-    formatted = []
-    for r in records:
-        prompt = format_sft_prompt(r["person"])
-        if r["chosen"] == "A":
-            chosen_text, rejected_text = r["a"], r["b"]
-        else:
-            chosen_text, rejected_text = r["b"], r["a"]
-        formatted.append({
-            "prompt": prompt,
-            "chosen": chosen_text,
-            "rejected": rejected_text,
-        })
-
-    random.shuffle(formatted)
-    split = int(len(formatted) * split_ratio)
-
-    def to_dataset(recs):
-        return Dataset.from_dict({
-            "prompt":   [r["prompt"]   for r in recs],
-            "chosen":   [r["chosen"]   for r in recs],
-            "rejected": [r["rejected"] for r in recs],
-        })
-
+    split = max(1, int(len(examples) * val_ratio))
     return DatasetDict({
-        "train": to_dataset(formatted[:split]),
-        "val":   to_dataset(formatted[split:]),
+        "train": Dataset.from_list(examples[split:]),
+        "val":   Dataset.from_list(examples[:split]),
     })
 
 
-# ── Eval dataset ─────────────────────────────────────────────────────────────
+# ── DPO ──────────────────────────────────────────────────────────────────────
 
-def load_eval_prompts(path: str | Path) -> list[str]:
-    """Load a list of person descriptions for generation/eval."""
-    path = Path(path)
-    records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
-    return [format_sft_prompt(r["person"]) for r in records]
+def load_dpo_dataset(path: str | Path, val_ratio: float = 0.1) -> DatasetDict:
+    """
+    Build a DPO dataset of (prompt, chosen, rejected) triples.
+
+    DPOTrainer expects exactly these three keys.
+    """
+    records = _load_records(path)
+    examples = [
+        {
+            "prompt":   r["prompt"],
+            "chosen":   r["chosen"],
+            "rejected": r["rejected"],
+        }
+        for r in records
+    ]
+
+    split = max(1, int(len(examples) * val_ratio))
+    return DatasetDict({
+        "train": Dataset.from_list(examples[split:]),
+        "val":   Dataset.from_list(examples[:split]),
+    })

@@ -5,9 +5,7 @@ peft>=0.10.0
 datasets>=2.18.0
 accelerate>=0.29.0
 bitsandbytes>=0.43.0
-scipy
 numpy
 pandas
 matplotlib
-seaborn
 tqdm

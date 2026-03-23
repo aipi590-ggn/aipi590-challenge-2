@@ -1,75 +1,81 @@
 """
-Evaluation utilities.
+Evaluation utilities for the Hinge bio RLHF pipeline.
 
-Computes reward scores and qualitative metrics across model checkpoints.
+Generates bios from a model checkpoint and computes simple quality metrics
+for before/after comparison across base, SFT, and DPO checkpoints.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
-import numpy as np
 import torch
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-def score_bios(
-    bios: list[str],
-    reward_model_path: str,
-    batch_size: int = 16,
+def generate_bios(
+    model_path: str,
+    prompts: list[str],
+    max_new_tokens: int = 150,
+    temperature: float = 0.9,
+    top_p: float = 0.95,
     device: str = "cuda",
-) -> list[float]:
-    """Return reward model scores for a list of bio strings."""
-    tokenizer = AutoTokenizer.from_pretrained(reward_model_path)
-    model = AutoModelForSequenceClassification.from_pretrained(
-        reward_model_path, torch_dtype=torch.float16
+) -> list[str]:
+    """Generate one bio per prompt from a given checkpoint."""
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer.pad_token = tokenizer.eos_token
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_path, torch_dtype=torch.float16
     ).to(device).eval()
 
-    scores = []
-    for i in range(0, len(bios), batch_size):
-        batch = bios[i : i + batch_size]
-        inputs = tokenizer(batch, return_tensors="pt", padding=True, truncation=True, max_length=256).to(device)
+    bios = []
+    for prompt in prompts:
+        inputs = tokenizer(prompt, return_tensors="pt").to(device)
         with torch.no_grad():
-            logits = model(**inputs).logits
-        scores.extend(logits[:, 0].cpu().float().tolist())
+            out = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=True,
+                temperature=temperature,
+                top_p=top_p,
+                pad_token_id=tokenizer.eos_token_id,
+            )
+        new_tokens = out[0][inputs["input_ids"].shape[1]:]
+        bios.append(tokenizer.decode(new_tokens, skip_special_tokens=True).strip())
 
-    return scores
+    return bios
 
 
-def compare_checkpoints(
-    prompts: list[str],
-    checkpoints: dict[str, str],
-    reward_model_path: str,
-    generate_fn,
-) -> dict[str, dict]:
+def avg_length(bios: list[str]) -> float:
+    return sum(len(b.split()) for b in bios) / max(len(bios), 1)
+
+
+def generic_phrase_rate(bios: list[str]) -> float:
     """
-    Score generated bios from multiple checkpoints using the reward model.
-
-    Args:
-        prompts: list of formatted SFT prompts
-        checkpoints: {label: model_path}
-        reward_model_path: path to trained reward model
-        generate_fn: callable(model_path, prompts) -> list[str]
-
-    Returns:
-        {label: {"mean": float, "std": float, "scores": list[float]}}
+    Fraction of bios containing at least one known generic phrase.
+    Lower is better — DPO should push the model away from these.
     """
-    results = {}
-    for label, model_path in checkpoints.items():
-        bios = generate_fn(model_path, prompts)
-        scores = score_bios(bios, reward_model_path)
-        results[label] = {
-            "mean": float(np.mean(scores)),
-            "std":  float(np.std(scores)),
-            "scores": scores,
-            "bios": bios,
-        }
-    return results
+    GENERIC = [
+        "looking for someone", "love to laugh", "i love to travel",
+        "i enjoy long walks", "i love adventures", "good vibes only",
+        "i'm an open book", "love trying new things", "i enjoy life",
+    ]
+    hits = sum(any(p in bio.lower() for p in GENERIC) for bio in bios)
+    return hits / max(len(bios), 1)
 
 
-def save_metrics(metrics: dict[str, Any], path: str | Path) -> None:
+def summarize(label: str, bios: list[str]) -> dict:
+    return {
+        "label":        label,
+        "n":            len(bios),
+        "avg_words":    round(avg_length(bios), 1),
+        "generic_rate": round(generic_phrase_rate(bios), 3),
+    }
+
+
+def save_results(results: list[dict], path: str | Path) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
-        json.dump(metrics, f, indent=2)
+        json.dump(results, f, indent=2)
