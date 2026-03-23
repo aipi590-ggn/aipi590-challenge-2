@@ -2,7 +2,19 @@
   {
     "label": "base",
     "n": 10,
-    "avg_words": 42.2,
+    "avg_words": 58.7,
     "generic_rate": 0.0
+  },
+  {
+    "label": "sft",
+    "n": 10,
+    "avg_words": 44.0,
+    "generic_rate": 0.1
+  },
+  {
+    "label": "dpo",
+    "n": 10,
+    "avg_words": 58.8,
+    "generic_rate": 0.2
   }
 ]
