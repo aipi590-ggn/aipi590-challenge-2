@@ -52,6 +52,41 @@ Format:
 {"prompt": "Write a dating bio for: ...", "chosen": "...", "rejected": "..."}
 ```
 
+## Human Preference Data App (`data_app`)
+
+This repository also includes a standalone data-collection app under `data_app/`, used to generate and annotate bio pairs before training.
+
+### What it includes
+
+- `generate_bios.py`: generate paired candidate bios from profile prompts and save to `bio_pairs.json`
+- `swiperight/`: React + Vite + Tailwind web app ("MyRight") for A/B preference collection
+- `preferences.json`: exported `(prompt, chosen, rejected)` records for DPO
+- `report.md`: short implementation report for the annotation workflow
+
+### MyRight web app
+
+Live demo: [swiperight-alpha.vercel.app](https://swiperight-alpha.vercel.app)
+
+- Firebase Firestore-backed annotation collection
+- 20 comparisons per user session
+- Left/right randomization to reduce position bias
+- Admin export page at `?admin=true`
+
+### Run locally
+
+```bash
+cd data_app/swiperight
+npm install
+npm run dev
+```
+
+### Generate bio pairs
+
+```bash
+cd data_app
+python generate_bios.py
+```
+
 ---
 
 ## Structure
@@ -66,6 +101,12 @@ aipi590-challenge-2/
 │   ├── colab_utils.py      # publish_artifacts pattern
 │   ├── dataset.py          # SFT and DPO dataset loaders
 │   └── eval.py             # bio generation and quality metrics
+├── data_app/
+│   ├── generate_bios.py    # generates candidate bio pairs
+│   ├── bio_pairs.json      # generated pairs used in annotation app
+│   ├── preferences.json    # exported preferences from annotation app
+│   ├── report.md           # app and data pipeline report
+│   └── swiperight/         # React app for human preference collection
 ├── data/
 │   └── preferences.json    # 243 human preference triples
 ├── results/                # metrics + charts (auto-published by notebooks)

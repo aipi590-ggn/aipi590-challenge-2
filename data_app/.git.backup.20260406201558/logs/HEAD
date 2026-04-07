@@ -1,0 +1,3 @@
+0000000000000000000000000000000000000000 af7cdd40b2f7e1ce88192b12729c4e319406b4f1 Yifei <yg291@duke.edu> 1774226341 -0400	clone: from https://github.com/SophiaYifei/RLHF.git
+af7cdd40b2f7e1ce88192b12729c4e319406b4f1 650790ca5da776de7c839f640ef69930a6731b56 Yifei <yg291@duke.edu> 1774277957 -0400	commit: Add MyRight web app, bio generation pipeline, and preference export
+650790ca5da776de7c839f640ef69930a6731b56 85ce5ac26f15b56032d6fc4f3eb4436fd8b82a8c Yifei <yg291@duke.edu> 1774295467 -0400	commit: Add project report and rebalance personality keywords
