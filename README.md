@@ -1,5 +1,6 @@
 # RLHF for Dating App Bio Generation
 
+[![Duke AIPI 590](https://img.shields.io/badge/Duke-AIPI%20590-012169)](https://masters.pratt.duke.edu/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![TRL](https://img.shields.io/badge/TRL-0.8%2B-orange.svg)](https://github.com/huggingface/trl)
 [![HuggingFace](https://img.shields.io/badge/%F0%9F%A4%97-distilgpt2-yellow)](https://huggingface.co/distilgpt2)
